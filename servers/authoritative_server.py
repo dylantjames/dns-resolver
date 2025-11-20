@@ -5,7 +5,6 @@ Authoritative DNS Server
 Responsibilities:
 - Loads domain name to IP address mappings from dns_records.txt
 - Returns final IP address for domain queries
-- Authoritative source of truth for domain records
 """
 
 import socket
