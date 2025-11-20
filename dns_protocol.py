@@ -1,26 +1,40 @@
-"""
-DNS Protocol Message Format
+"""DNS protocol message format implementation.
 
-Message structure:
-    QUERY:   QUERY|<query_id>|<domain_name>
+Simplified DNS protocol using pipe-delimited encoding.
+
+Wire format:
+    QUERY:    QUERY|<query_id>|<domain_name>
     RESPONSE: RESPONSE|<query_id>|<domain_name>|<result_type>|<result_value>
-
-Result types:
-    IP: Final IP address
-    NS: Name server to query next (format: server_type:host:port)
-    ERROR: Error message
 """
+
 
 class DNSMessage:
+    """DNS protocol message for queries and responses.
+
+    Attributes:
+        msg_type: "QUERY" or "RESPONSE".
+        query_id: Unique identifier for matching queries to responses.
+        domain: Fully qualified domain name.
+        result_type: "IP", "NS", or "ERROR" for responses, None for queries.
+        result_value: Result data for responses, None for queries.
+    """
+
     def __init__(self, msg_type, query_id, domain, result_type=None, result_value=None):
-        self.msg_type = msg_type  # QUERY or RESPONSE
+        self.msg_type = msg_type
         self.query_id = query_id
         self.domain = domain
-        self.result_type = result_type  # IP, NS, ERROR
+        self.result_type = result_type
         self.result_value = result_value
 
     def serialize(self):
-        """Convert message to wire format"""
+        """Convert message to wire format bytes.
+
+        Returns:
+            Pipe-delimited UTF-8 encoded bytes.
+
+        Raises:
+            ValueError: If msg_type is invalid.
+        """
         if self.msg_type == "QUERY":
             return f"QUERY|{self.query_id}|{self.domain}".encode('utf-8')
         elif self.msg_type == "RESPONSE":
@@ -30,7 +44,14 @@ class DNSMessage:
 
     @staticmethod
     def deserialize(data):
-        """Parse wire format to DNSMessage object"""
+        """Parse wire format bytes into DNSMessage.
+
+        Args:
+            data: Raw bytes from network socket.
+
+        Returns:
+            Parsed DNSMessage object.
+        """
         parts = data.decode('utf-8').split('|')
 
         if parts[0] == "QUERY":

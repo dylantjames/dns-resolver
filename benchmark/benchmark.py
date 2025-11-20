@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
-"""
-DNS System Benchmark Suite
+"""DNS system benchmark suite.
 
-Measures:
-- Total query throughput
-- Cache hit rate
-- Average query latency
-- Concurrent query handling
-- Cache vs non-cache performance
+Measures query throughput, cache hit rate, latency, and concurrent performance.
 """
 
 import sys
@@ -16,12 +10,18 @@ import time
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from client.dns_client import DNSClient
 
 
 class DNSBenchmark:
+    """Benchmark suite for DNS system performance.
+
+    Attributes:
+        client: DNSClient instance for queries.
+        results: Dictionary tracking query metrics.
+    """
+
     def __init__(self):
         self.client = DNSClient()
         self.results = {
@@ -33,7 +33,11 @@ class DNSBenchmark:
         }
 
     def load_test_domains(self, filename='data/dns_records.txt'):
-        """Load domain names from DNS records file"""
+        """Load domain names from DNS records file.
+
+        Returns:
+            List of domain name strings.
+        """
         domains = []
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         filepath = os.path.join(base_dir, filename)
@@ -50,10 +54,17 @@ class DNSBenchmark:
         return domains
 
     def single_query(self, domain):
-        """Perform single query and measure time"""
+        """Perform single query and measure time.
+
+        Args:
+            domain: Domain name to resolve.
+
+        Returns:
+            Dictionary with domain, result, time_ms, and success status.
+        """
         start = time.time()
         result = self.client.resolve(domain)
-        elapsed = (time.time() - start) * 1000  # Convert to ms
+        elapsed = (time.time() - start) * 1000
 
         success = not result.startswith('ERROR')
 
@@ -65,7 +76,7 @@ class DNSBenchmark:
         }
 
     def sequential_benchmark(self, domains, num_queries):
-        """Run sequential queries"""
+        """Run sequential queries."""
         print(f"\n=== Sequential Benchmark ({num_queries} queries) ===")
 
         start_time = time.time()
@@ -91,20 +102,18 @@ class DNSBenchmark:
         print(f"Completed in {total_time:.2f} seconds")
 
     def concurrent_benchmark(self, domains, num_queries, max_workers=10):
-        """Run concurrent queries"""
+        """Run concurrent queries."""
         print(f"\n=== Concurrent Benchmark ({num_queries} queries, {max_workers} threads) ===")
 
         start_time = time.time()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all queries
             futures = []
             for i in range(num_queries):
                 domain = random.choice(domains)
                 future = executor.submit(self.single_query, domain)
                 futures.append(future)
 
-            # Collect results
             completed = 0
             for future in as_completed(futures):
                 result = future.result()
@@ -127,14 +136,18 @@ class DNSBenchmark:
         print(f"Completed in {total_time:.2f} seconds")
 
     def cache_effectiveness_test(self, domains, iterations=5):
-        """Test cache effectiveness by querying same domains multiple times"""
+        """Test cache effectiveness by querying same domains multiple times.
+
+        Args:
+            domains: List of domains to query.
+            iterations: Number of times to query each domain.
+        """
         print(f"\n=== Cache Effectiveness Test ===")
         print(f"Querying {len(domains)} unique domains {iterations} times each")
 
         first_pass_times = []
         cached_times = []
 
-        # First pass (cache misses)
         print("First pass (populating cache)...")
         for domain in domains:
             result = self.single_query(domain)
@@ -143,7 +156,6 @@ class DNSBenchmark:
             if result['success']:
                 self.results['successful_queries'] += 1
 
-        # Subsequent passes (cache hits)
         for iteration in range(1, iterations):
             print(f"Pass {iteration + 1} (cached queries)...")
             for domain in domains:
@@ -166,7 +178,7 @@ class DNSBenchmark:
         self.results['query_times'].extend(cached_times)
 
     def print_results(self):
-        """Print benchmark results"""
+        """Print benchmark results."""
         print(f"\n{'='*60}")
         print(f"BENCHMARK RESULTS")
         print(f"{'='*60}")
@@ -207,22 +219,17 @@ def main():
 
     benchmark = DNSBenchmark()
 
-    # Load test domains
     print("Loading test domains...")
     domains = benchmark.load_test_domains()
     print(f"Loaded {len(domains)} domains")
 
-    # Test 1: Cache effectiveness (small set, multiple queries)
     test_domains = random.sample(domains, min(20, len(domains)))
     benchmark.cache_effectiveness_test(test_domains, iterations=5)
 
-    # Test 2: Sequential queries
     benchmark.sequential_benchmark(domains, num_queries=200)
 
-    # Test 3: Concurrent queries
     benchmark.concurrent_benchmark(domains, num_queries=500, max_workers=20)
 
-    # Print final results
     benchmark.print_results()
 
     print("\nNote: Check servers/local_server.py output for cache hit rate statistics")

@@ -1,47 +1,62 @@
 #!/usr/bin/env python3
-"""
-Root DNS Server
+"""Root DNS server implementation.
 
-Responsibilities:
-- Receives queries for any domain
-- Returns the appropriate TLD server address based on domain extension
-- Handles .com, .edu, .org, etc.
+Receives queries for any domain and returns the appropriate TLD server address.
 """
 
 import socket
 import sys
 import os
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dns_protocol import DNSMessage
 
 
 class RootServer:
+    """Root DNS server that delegates to TLD servers.
+
+    Attributes:
+        host: Server bind address.
+        port: Server bind port.
+        sock: TCP socket for accepting connections.
+        tld_servers: Mapping of TLD names to (host, port) tuples.
+        query_count: Total queries processed.
+    """
+
     def __init__(self, host='127.0.0.1', port=53000):
         self.host = host
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        # TLD server mappings
         self.tld_servers = {
             'com': ('127.0.0.1', 53001),
             'edu': ('127.0.0.1', 53002),
-            'org': ('127.0.0.1', 53001),  # Reuse .com TLD for .org
+            'org': ('127.0.0.1', 53001),
         }
 
         self.query_count = 0
 
     def get_tld(self, domain):
-        """Extract TLD from domain name"""
+        """Extract TLD from domain name.
+
+        Returns:
+            TLD string or None if invalid.
+        """
         parts = domain.split('.')
         if len(parts) >= 2:
             return parts[-1]
         return None
 
     def handle_query(self, query_msg):
-        """Process DNS query and return appropriate TLD server"""
+        """Process DNS query and return TLD server reference.
+
+        Args:
+            query_msg: DNSMessage query object.
+
+        Returns:
+            DNSMessage response with NS or ERROR type.
+        """
         self.query_count += 1
 
         tld = self.get_tld(query_msg.domain)
@@ -70,7 +85,7 @@ class RootServer:
         return response
 
     def start(self):
-        """Start the root server"""
+        """Start the root server and handle incoming connections."""
         self.sock.bind((self.host, self.port))
         self.sock.listen(5)
         print(f"[ROOT] Server started on {self.host}:{self.port}")

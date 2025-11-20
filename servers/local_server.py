@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
-"""
-Local DNS Server (Recursive Resolver with Caching)
+"""Local DNS server with recursive resolution and caching.
 
-Responsibilities:
-- Receives queries from clients
-- Checks local cache first (cache hit = fast response)
-- On cache miss, performs iterative resolution:
-  1. Query Root Server for TLD server
-  2. Query TLD Server for Authoritative server
-  3. Query Authoritative Server for IP
-- Caches results with TTL
-- Returns final IP to client
+Performs iterative DNS resolution by querying root, TLD, and authoritative
+servers in sequence. Results are cached with TTL and LRU eviction.
 """
 
 import socket
@@ -19,49 +11,57 @@ import os
 import time
 from collections import OrderedDict
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dns_protocol import DNSMessage
 
 
 class DNSCache:
-    """LRU Cache with TTL for DNS records"""
+    """LRU cache with TTL for DNS records.
+
+    Attributes:
+        cache: OrderedDict mapping domains to (ip, timestamp) tuples.
+        max_size: Maximum cache entries before LRU eviction.
+        ttl: Time-to-live in seconds for cache entries.
+        hits: Total cache hits.
+        misses: Total cache misses.
+    """
+
     def __init__(self, max_size=1000, ttl=300):
         self.cache = OrderedDict()
         self.max_size = max_size
-        self.ttl = ttl  # Time-to-live in seconds
+        self.ttl = ttl
         self.hits = 0
         self.misses = 0
 
     def get(self, domain):
-        """Retrieve from cache if exists and not expired"""
+        """Retrieve from cache if exists and not expired.
+
+        Returns:
+            Cached IP address or None if miss or expired.
+        """
         if domain in self.cache:
             ip, timestamp = self.cache[domain]
             if time.time() - timestamp < self.ttl:
-                # Move to end (most recently used)
                 self.cache.move_to_end(domain)
                 self.hits += 1
                 return ip
             else:
-                # Expired entry
                 del self.cache[domain]
 
         self.misses += 1
         return None
 
     def put(self, domain, ip):
-        """Add to cache with current timestamp"""
+        """Add to cache, evicting LRU entry if at capacity."""
         if domain in self.cache:
-            # Update existing entry
             self.cache.move_to_end(domain)
         elif len(self.cache) >= self.max_size:
-            # Remove oldest entry (LRU)
             self.cache.popitem(last=False)
 
         self.cache[domain] = (ip, time.time())
 
     def get_hit_rate(self):
-        """Calculate cache hit rate"""
+        """Calculate cache hit rate as percentage."""
         total = self.hits + self.misses
         if total == 0:
             return 0.0
@@ -69,6 +69,18 @@ class DNSCache:
 
 
 class LocalServer:
+    """Local DNS server with recursive resolution and caching.
+
+    Attributes:
+        host: Server bind address.
+        port: Server bind port.
+        root_server: (host, port) tuple for root DNS server.
+        sock: TCP socket for accepting connections.
+        cache: DNS cache instance.
+        query_count: Total queries processed.
+        total_resolution_time: Cumulative resolution time in milliseconds.
+    """
+
     def __init__(self, host='127.0.0.1', port=53004,
                  root_server=('127.0.0.1', 53000)):
         self.host = host
@@ -77,15 +89,21 @@ class LocalServer:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        # DNS Cache
         self.cache = DNSCache(max_size=1000, ttl=300)
 
-        # Statistics
         self.query_count = 0
         self.total_resolution_time = 0.0
 
     def query_server(self, server_addr, query_msg):
-        """Send query to a DNS server and get response"""
+        """Send query to DNS server and receive response.
+
+        Args:
+            server_addr: (host, port) tuple for target server.
+            query_msg: DNSMessage query to send.
+
+        Returns:
+            DNSMessage response or None on error.
+        """
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect(server_addr)
@@ -101,10 +119,20 @@ class LocalServer:
         return None
 
     def iterative_resolve(self, domain, query_id):
-        """Perform iterative DNS resolution"""
+        """Perform iterative DNS resolution through hierarchy.
+
+        Queries root server for TLD, TLD server for authoritative, and
+        authoritative server for final IP.
+
+        Args:
+            domain: Domain name to resolve.
+            query_id: Query identifier.
+
+        Returns:
+            IP address string or None if resolution fails.
+        """
         print(f"[LOCAL] Starting iterative resolution for {domain}")
 
-        # Step 1: Query Root Server
         query = DNSMessage("QUERY", query_id, domain)
         response = self.query_server(self.root_server, query)
 
@@ -112,37 +140,30 @@ class LocalServer:
             print(f"[LOCAL] Root server error")
             return None
 
-        # Step 2: Parse TLD server address
         if response.result_type != "NS":
             print(f"[LOCAL] Unexpected response from root: {response.result_type}")
             return None
 
-        # Format: "TLD:host:port"
         parts = response.result_value.split(':')
         tld_server = (parts[1], int(parts[2]))
         print(f"[LOCAL] Root -> TLD server at {tld_server[0]}:{tld_server[1]}")
 
-        # Step 3: Query TLD Server
         response = self.query_server(tld_server, query)
 
         if not response or response.result_type == "ERROR":
             print(f"[LOCAL] TLD server error")
             return None
 
-        # Step 4: Parse Authoritative server address
         if response.result_type != "NS":
-            # Might have gotten IP directly (shouldn't happen in our design)
             if response.result_type == "IP":
                 return response.result_value
             print(f"[LOCAL] Unexpected response from TLD: {response.result_type}")
             return None
 
-        # Format: "AUTH:host:port"
         parts = response.result_value.split(':')
         auth_server = (parts[1], int(parts[2]))
         print(f"[LOCAL] TLD -> Auth server at {auth_server[0]}:{auth_server[1]}")
 
-        # Step 5: Query Authoritative Server
         response = self.query_server(auth_server, query)
 
         if not response:
@@ -157,16 +178,22 @@ class LocalServer:
             return None
 
     def handle_query(self, query_msg):
-        """Process DNS query with caching"""
+        """Process DNS query with caching.
+
+        Args:
+            query_msg: DNSMessage query object.
+
+        Returns:
+            DNSMessage response with IP or ERROR type.
+        """
         self.query_count += 1
         start_time = time.time()
 
         domain = query_msg.domain.lower()
 
-        # Check cache first
         cached_ip = self.cache.get(domain)
         if cached_ip:
-            resolution_time = (time.time() - start_time) * 1000  # Convert to ms
+            resolution_time = (time.time() - start_time) * 1000
             self.total_resolution_time += resolution_time
             print(f"[LOCAL] Query #{self.query_count}: {domain} -> {cached_ip} (CACHED, {resolution_time:.2f}ms)")
 
@@ -179,15 +206,13 @@ class LocalServer:
             )
             return response
 
-        # Cache miss - perform iterative resolution
         print(f"[LOCAL] Query #{self.query_count}: {domain} (CACHE MISS)")
         ip_address = self.iterative_resolve(domain, query_msg.query_id)
 
-        resolution_time = (time.time() - start_time) * 1000  # Convert to ms
+        resolution_time = (time.time() - start_time) * 1000
         self.total_resolution_time += resolution_time
 
         if ip_address:
-            # Cache the result
             self.cache.put(domain, ip_address)
             print(f"[LOCAL] Resolved {domain} -> {ip_address} ({resolution_time:.2f}ms)")
 
@@ -211,7 +236,7 @@ class LocalServer:
         return response
 
     def print_statistics(self):
-        """Print server statistics"""
+        """Print server statistics."""
         print(f"\n[LOCAL] ===== STATISTICS =====")
         print(f"[LOCAL] Total Queries: {self.query_count}")
         print(f"[LOCAL] Cache Hits: {self.cache.hits}")
@@ -224,7 +249,7 @@ class LocalServer:
         print(f"[LOCAL] ========================\n")
 
     def start(self):
-        """Start the local server"""
+        """Start the local server and handle incoming connections."""
         self.sock.bind((self.host, self.port))
         self.sock.listen(10)
         print(f"[LOCAL] Server started on {self.host}:{self.port}")

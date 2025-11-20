@@ -1,43 +1,48 @@
 #!/usr/bin/env python3
-"""
-DNS Client
+"""DNS client for querying local DNS server.
 
-Responsibilities:
-- Send domain name queries to Local DNS Server
-- Receive and display IP addresses
-- Simple command-line interface for testing
+Provides command line interface for resolving domain names to IP addresses.
 """
 
 import socket
 import sys
 import os
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dns_protocol import DNSMessage
 
 
 class DNSClient:
+    """DNS client that queries local server.
+
+    Attributes:
+        local_server: (host, port) tuple for local DNS server.
+        query_id: Incrementing query identifier.
+    """
+
     def __init__(self, local_server=('127.0.0.1', 53004)):
         self.local_server = local_server
         self.query_id = 0
 
     def resolve(self, domain):
-        """Resolve a domain name to IP address"""
+        """Resolve domain name to IP address.
+
+        Args:
+            domain: Domain name to resolve.
+
+        Returns:
+            IP address string or error message prefixed with "ERROR:".
+        """
         self.query_id += 1
 
-        # Create query message
         query = DNSMessage("QUERY", self.query_id, domain)
 
         try:
-            # Connect to local server
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect(self.local_server)
 
-            # Send query
             sock.sendall(query.serialize())
 
-            # Receive response
             data = sock.recv(1024)
             sock.close()
 
@@ -54,7 +59,7 @@ class DNSClient:
         return "ERROR: No response"
 
     def interactive_mode(self):
-        """Interactive command-line interface"""
+        """Run interactive command line interface."""
         print("DNS Client - Interactive Mode")
         print(f"Connected to Local Server: {self.local_server[0]}:{self.local_server[1]}")
         print("Enter domain names to resolve (or 'quit' to exit)")
@@ -97,9 +102,7 @@ if __name__ == "__main__":
     client = DNSClient(local_server=(args.server_host, args.server_port))
 
     if args.domain:
-        # Single query mode
         ip = client.resolve(args.domain)
         print(f"{args.domain} -> {ip}")
     else:
-        # Interactive mode
         client.interactive_mode()

@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""
-Authoritative DNS Server
+"""Authoritative DNS server implementation.
 
-Responsibilities:
-- Loads domain name to IP address mappings from dns_records.txt
-- Returns final IP address for domain queries
+Loads domain to IP mappings and returns final IP addresses for queries.
 """
 
 import socket
 import sys
 import os
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dns_protocol import DNSMessage
 
 
 class AuthoritativeServer:
+    """Authoritative server that returns IP addresses for domains.
+
+    Attributes:
+        host: Server bind address.
+        port: Server bind port.
+        records_file: Path to DNS records file.
+        sock: TCP socket for accepting connections.
+        dns_records: Domain to IP mapping loaded from file.
+        query_count: Total queries processed.
+    """
+
     def __init__(self, host='127.0.0.1', port=53003, records_file='data/dns_records.txt'):
         self.host = host
         self.port = port
@@ -24,15 +31,13 @@ class AuthoritativeServer:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        # DNS records: domain -> IP mapping
         self.dns_records = {}
         self.load_dns_records()
 
         self.query_count = 0
 
     def load_dns_records(self):
-        """Load DNS records from text file"""
-        # Construct absolute path to records file
+        """Load DNS records from text file."""
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         records_path = os.path.join(base_dir, self.records_file)
 
@@ -40,7 +45,6 @@ class AuthoritativeServer:
             with open(records_path, 'r') as f:
                 for line in f:
                     line = line.strip()
-                    # Skip comments and empty lines
                     if line.startswith('#') or not line:
                         continue
 
@@ -59,7 +63,14 @@ class AuthoritativeServer:
             print(f"[AUTH] Starting with empty records database")
 
     def handle_query(self, query_msg):
-        """Process DNS query and return IP address"""
+        """Process DNS query and return IP address.
+
+        Args:
+            query_msg: DNSMessage query object.
+
+        Returns:
+            DNSMessage response with IP or ERROR type.
+        """
         self.query_count += 1
 
         domain = query_msg.domain.lower()
@@ -87,7 +98,7 @@ class AuthoritativeServer:
         return response
 
     def start(self):
-        """Start the authoritative server"""
+        """Start the authoritative server and handle incoming connections."""
         self.sock.bind((self.host, self.port))
         self.sock.listen(5)
         print(f"[AUTH] Server started on {self.host}:{self.port}")

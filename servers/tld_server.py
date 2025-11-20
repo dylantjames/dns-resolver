@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""
-TLD (Top-Level Domain) Server
+"""TLD (Top Level Domain) server implementation.
 
-Responsibilities:
-- Receives queries for domains under its TLD (.com, .edu, etc.)
-- Returns the authoritative server address for the specific domain
+Receives queries for domains under its TLD and returns authoritative server address.
 """
 
 import socket
@@ -12,12 +9,22 @@ import sys
 import os
 import argparse
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dns_protocol import DNSMessage
 
 
 class TLDServer:
+    """TLD server that delegates to authoritative servers.
+
+    Attributes:
+        tld_name: TLD this server handles (e.g., "com", "edu").
+        host: Server bind address.
+        port: Server bind port.
+        auth_server: (host, port) tuple for authoritative server.
+        sock: TCP socket for accepting connections.
+        query_count: Total queries processed.
+    """
+
     def __init__(self, tld_name, host='127.0.0.1', port=53001, auth_server=('127.0.0.1', 53003)):
         self.tld_name = tld_name
         self.host = host
@@ -28,21 +35,26 @@ class TLDServer:
         self.query_count = 0
 
     def get_domain_name(self, full_domain):
-        """Extract domain name from full domain (e.g., 'example' from 'www.example.com')"""
+        """Extract domain name from full domain (e.g., 'example' from 'www.example.com')."""
         parts = full_domain.split('.')
         if len(parts) >= 2:
-            return parts[-2]  # e.g., 'example' from 'www.example.com'
+            return parts[-2]
         return full_domain
 
     def handle_query(self, query_msg):
-        """Process DNS query and return authoritative server"""
+        """Process DNS query and return authoritative server reference.
+
+        Args:
+            query_msg: DNSMessage query object.
+
+        Returns:
+            DNSMessage response with NS or ERROR type.
+        """
         self.query_count += 1
 
         domain_name = self.get_domain_name(query_msg.domain)
 
-        # Check if domain is under our TLD
         if query_msg.domain.endswith(f'.{self.tld_name}'):
-            # Return authoritative server (in this simple implementation, all go to same auth server)
             auth_host, auth_port = self.auth_server
             result = f"AUTH:{auth_host}:{auth_port}"
             response = DNSMessage(
@@ -66,7 +78,7 @@ class TLDServer:
         return response
 
     def start(self):
-        """Start the TLD server"""
+        """Start the TLD server and handle incoming connections."""
         self.sock.bind((self.host, self.port))
         self.sock.listen(5)
         print(f"[TLD-{self.tld_name.upper()}] Server started on {self.host}:{self.port}")
